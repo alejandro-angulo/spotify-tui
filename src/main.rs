@@ -9,6 +9,8 @@ mod redirect_uri;
 mod ui;
 mod user_config;
 
+use log::debug;
+use env_logger;
 use crate::app::RouteId;
 use crate::event::Key;
 use anyhow::{anyhow, Result};
@@ -120,6 +122,9 @@ fn panic_hook(info: &PanicInfo<'_>) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+  env_logger::init();
+  debug!("Debug mode is enabled");
+
   panic::set_hook(Box::new(|info| {
     panic_hook(info);
   }));

@@ -1,6 +1,9 @@
 use super::user_config::UserConfig;
 use crate::network::IoEvent;
 use anyhow::anyhow;
+use failure::Error;
+use log::debug;
+use rspotify::client::ApiError;
 use rspotify::{
   model::{
     album::{FullAlbum, SavedAlbum, SimplifiedAlbum},
@@ -20,6 +23,7 @@ use rspotify::{
 };
 use std::str::FromStr;
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 use std::{
   cmp::{max, min},
   collections::HashSet,
@@ -266,6 +270,7 @@ pub struct App {
   pub album_table_context: AlbumTableContext,
   pub saved_album_tracks_index: usize,
   pub api_error: String,
+  pub retry_at: Option<SystemTime>,
   pub current_playback_context: Option<CurrentlyPlaybackContext>,
   pub devices: Option<DevicePayload>,
   // Inputs:
@@ -361,6 +366,7 @@ impl Default for App {
       large_search_limit: 20,
       small_search_limit: 4,
       api_error: String::new(),
+      retry_at: None,
       current_playback_context: None,
       devices: None,
       input: vec![],
@@ -462,6 +468,8 @@ impl App {
   }
 
   fn poll_current_playback(&mut self) {
+    debug!("polling for playback");
+
     // Poll every 5 seconds
     let poll_interval_ms = 5_000;
 
@@ -481,6 +489,10 @@ impl App {
   }
 
   pub fn update_on_tick(&mut self) {
+    if self.retry_at.is_some() && SystemTime::now() < self.retry_at.unwrap() {
+      debug!("Rate limited, skipping tick update");
+      return;
+    }
     self.poll_current_playback();
     if let Some(CurrentlyPlaybackContext {
       item: Some(item),
@@ -601,6 +613,29 @@ impl App {
   pub fn handle_error(&mut self, e: anyhow::Error) {
     self.push_navigation_stack(RouteId::Error, ActiveBlock::Error);
     self.api_error = e.to_string();
+
+    // API eror info is nested in the errors.
+    // First layer is anyhow's Error (this is `e`).
+    // Second layer is failure's Error.
+    // Third layer is rspotify's ApiError (contains rate limit info).
+    // Need to downcast to get to the underlying ApiError
+    match e.downcast_ref::<Error>() {
+      Some(failure_error) => match failure_error.downcast_ref::<ApiError>() {
+        Some(ApiError::RateLimited(rate_limited)) => {
+          if rate_limited.is_some() {
+            let seconds_to_wait = rate_limited.unwrap() as u64;
+            self.retry_at = Some(SystemTime::now() + Duration::from_secs(seconds_to_wait));
+          }
+        }
+        None => {
+          debug!("Failed to downcast failure's Error to rspotify's ApiError")
+        }
+        _ => (), // TODO: Handle other ApiError variants
+      },
+      None => {
+        debug!("Failed to downcast anyhow's Error to failure's Error")
+      }
+    }
   }
 
   pub fn toggle_playback(&mut self) {
