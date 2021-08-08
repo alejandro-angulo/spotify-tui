@@ -1,3 +1,4 @@
+use crate::app::get_thread_id;
 use crate::app::{
   ActiveBlock, AlbumTableContext, App, Artist, ArtistBlock, EpisodeTableContext, RouteId,
   ScrollableResultPages, SelectedAlbum, SelectedFullAlbum, SelectedFullShow, SelectedShow,
@@ -25,6 +26,7 @@ use rspotify::{
   util::get_token,
 };
 use serde_json::{map::Map, Value};
+use std::process;
 use std::{
   sync::Arc,
   time::{Duration, Instant, SystemTime},
@@ -339,6 +341,11 @@ impl<'a> Network<'a> {
   }
 
   async fn get_current_playback(&mut self) {
+    debug![
+      "Making request for current playback PID: {} Thread ID: {}",
+      process::id(),
+      get_thread_id()
+    ];
     let context = self
       .spotify
       .current_playback(
@@ -366,6 +373,8 @@ impl<'a> Network<'a> {
       }
       Ok(None) => {
         debug!("No response from Spotify");
+        let mut app = self.app.lock().await;
+        app.instant_since_last_current_playback_poll = Instant::now();
       }
       Err(e) => {
         self.handle_error(anyhow!(e)).await;

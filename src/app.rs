@@ -2,6 +2,7 @@ use super::user_config::UserConfig;
 use crate::network::IoEvent;
 use anyhow::anyhow;
 use failure::Error;
+use libc;
 use log::debug;
 use rspotify::client::ApiError;
 use rspotify::{
@@ -21,6 +22,7 @@ use rspotify::{
   },
   senum::Country,
 };
+use std::process;
 use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -468,8 +470,6 @@ impl App {
   }
 
   fn poll_current_playback(&mut self) {
-    debug!("polling for playback");
-
     // Poll every 5 seconds
     let poll_interval_ms = 5_000;
 
@@ -478,7 +478,18 @@ impl App {
       .elapsed()
       .as_millis();
 
+    // TODO: Check rate limits here?
+    // TODO: Below doesn't work because we have multiple threads running.
+    // Not all threads get `is_fetching_current_playback` set to the same value.
+    // This results in ~2 requests per second.
     if !self.is_fetching_current_playback && elapsed >= poll_interval_ms {
+      debug!(
+        "polling for playback PID: {} Thread ID: {} elapsed: {} poll_interval_ms: {}",
+        process::id(),
+        get_thread_id(),
+        elapsed,
+        poll_interval_ms,
+      );
       self.is_fetching_current_playback = true;
       // Trigger the seek if the user has set a new position
       match self.seek_ms {
@@ -1224,4 +1235,8 @@ impl App {
       self.help_menu_page -= 1;
     }
   }
+}
+
+pub fn get_thread_id() -> libc::pthread_t {
+  unsafe { libc::pthread_self() }
 }

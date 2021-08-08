@@ -9,8 +9,6 @@ mod redirect_uri;
 mod ui;
 mod user_config;
 
-use log::debug;
-use env_logger;
 use crate::app::RouteId;
 use crate::event::Key;
 use anyhow::{anyhow, Result};
@@ -27,6 +25,8 @@ use crossterm::{
   terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
   ExecutableCommand,
 };
+use env_logger;
+use log::debug;
 use network::{get_spotify, IoEvent, Network};
 use redirect_uri::redirect_uri_web_server;
 use rspotify::{
